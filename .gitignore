@@ -1,0 +1,42 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.a
+
+# Build output
+/build/
+/build/*
+
+# Test binary
+*.test
+
+# Coverage output
+*.out
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependency directories
+vendor/
+
+# Environment files
+.env
+.env.local
+
+# Mobile build artifacts
+gomobile-*
+*.framework
+*.xcframework
+*.aar
+*.apk
