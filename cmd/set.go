@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/omnicofig/cli/pkg/audit"
 	"github.com/omnicofig/cli/pkg/detect"
 	"github.com/omnicofig/cli/pkg/formats"
+	"github.com/omnicofig/cli/pkg/profile"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +25,7 @@ specific config file is not provided via --config, it will search
 common locations for your OS.
 
 Creates a backup of the original file before modifying (.bak timestamp).
+All changes are logged to the audit log.
 
 Supports dot-notation keys for nested formats (e.g., "database.host").
 
@@ -36,7 +39,6 @@ Examples:
 
 			configPath, err := resolveConfigPath(cfgFile)
 			if err != nil {
-				// If file doesn't exist and --config was given, we can create it
 				if cfgFile != "" {
 					configPath = cfgFile
 				} else {
@@ -44,16 +46,31 @@ Examples:
 				}
 			}
 
-			// Read existing file (if it exists)
+			// Read existing file and get old value (if possible)
 			var data []byte
+			var oldValue string
+			var backupPath string
 			if _, statErr := os.Stat(configPath); statErr == nil {
 				data, err = os.ReadFile(configPath)
 				if err != nil {
 					return fmt.Errorf("cannot read config file %s: %w", configPath, err)
 				}
 
+				// Try to read old value for audit log
+				ext := filepath.Ext(configPath)
+				handler := formats.GetByExtension(ext)
+				if handler == nil && len(data) > 0 {
+					f := detect.DetectFormatFromContent(string(data))
+					handler = formats.Get(f.Name)
+				}
+				if handler != nil {
+					if val, readErr := handler.Read(data, key); readErr == nil {
+						oldValue = val
+					}
+				}
+
 				// Create backup before modifying
-				backupPath := configPath + ".bak." + time.Now().Format("20060102-150405")
+				backupPath = configPath + ".bak." + time.Now().Format("20060102-150405")
 				if err := os.WriteFile(backupPath, data, 0644); err != nil {
 					return fmt.Errorf("failed to create backup: %w", err)
 				}
@@ -68,12 +85,10 @@ Examples:
 				handler = formats.Get(f.Name)
 			}
 			if handler == nil {
-				// Default to JSON if we can't detect
 				handler = formats.Get("json")
 				if handler == nil {
 					return fmt.Errorf("no format handler available")
 				}
-				// If creating a new file, ensure it has .json extension
 				if ext == "" {
 					configPath += ".json"
 				}
@@ -91,6 +106,19 @@ Examples:
 			}
 
 			fmt.Printf("Set %s = %s in %s\n", key, value, configPath)
+
+			// Log to audit
+			p, _ := profile.Load()
+			audit.Log(audit.Entry{
+				User:       p.Name,
+				Business:   p.Business,
+				File:       configPath,
+				Key:        key,
+				OldValue:   oldValue,
+				NewValue:   value,
+				BackupPath: backupPath,
+			})
+
 			return nil
 		},
 	}
